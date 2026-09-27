@@ -1,0 +1,408 @@
+音頻字幕編輯器「Subber」設計文檔
+
+版本：2.0（Web 實作定稿版）
+上次修訂：v1.0 → v2.0
+目標平台：桌面瀏覽器（Chrome / Edge / Firefox / Safari）與平板瀏覽器（iPadOS 15+ Chrome/Safari、Android Chrome、HarmonyOS 瀏覽器）
+實作形態：單檔 HTML + 原生 JavaScript + Canvas + Web Audio API（零框架、零建置步驟，可直接雙擊開啟或部署為靜態頁）
+設計準則：以 Aegisub 打軸手感為核心，僅處理音頻，強制暗黑模式，不含逐字模式，完整支援平板無鍵鼠操作。
+
+版本歷程
+
+| 版本 | 主要變更 |
+|------|----------|
+| 1.0 | 初版設計文檔，定義桌面/平板雙模式佈局、SDFG 工作流、SRT 匯入匯出。 |
+| 1.1 | 修正 iOS Chrome 上「Blob + 」直接觸發匯出導致分頁崩潰的問題，改為 iOS 偵測 → 匯出彈窗（複製 / 分享 / 下載 三途徑）。 |
+| 1.2 | 平板模式的字幕編輯區佈局改為與桌面模式完全一致（不再堆疊），僅在小螢幕下由 CSS media query 自動換行。 |
+| 1.3 | 修正複製到剪貼板後貼上產生多餘空行 / \r\n 被目標程式解讀為雙換行的問題：統一換行符為 LF，並改用 navigator.clipboard.writeText(rawString) 而非複製 textarea 的 DOM 選取內容。 |
+| 2.0 | 整合以上所有修訂，補齊資料模型、座標變換、刻度演算法、SRT 語法容錯、平台相容矩陣、驗收清單，作為正式定稿文件。 |
+
+項目概述
+
+Subber 是一個輕量的「僅音頻」字幕時間軸編輯器，用於聽寫、校對、調整 SRT 字幕的時間碼。用戶載入一段音頻（mp3 / wav / flac / og / m4a）與一個可選的 SRT 字幕檔，透過可視化波形快速建立、修改、提交字幕行。
+
+軟體同時支援：
+
+傳統鍵盤快捷鍵工作流（左手 S/D/F/G，右手滑鼠，Aegisub 式打軸）
+平板觸控工作流（無鍵盤、無滑鼠，依賴螢幕左下 / 右下角的固定虛擬按鈕與波形手勢）
+
+不處理：影片、特效標籤（ASS/SSA）、樣式、逐字卡拉 OK、翻譯、語音辨識。
+
+設計目標與使用者場景
+
+| 場景 | 使用者 | 核心需求 |
+|------|--------|----------|
+| 桌面打軸專家 | 字幕組成員 | S/D/F/G 肌肉記憶、毫秒級紅藍線拖動、滾輪縮放、快速連續提交 |
+| 移動場景 / 平板用戶 | 通勤中校對者 | 無鍵鼠也能完成「播放 → 打點 → 提交 → 下一行」全流程；按鈕夠大、防誤觸 |
+| 精校場景 | 質檢員 | 播放最後 500ms 確認尾音未被切斷；CPS 警告；插入空白字幕補漏句 |
+| 交付場景 | 壓制 / 上傳者 | 匯出 100% 標準、UTF-8、LF 換行、可被各平台與 Aegisub/ffmpeg 正確解析的 SRT |
+
+2.1 設計優先級（衝突時取捨順序）
+
+不丟失用戶資料（匯出必須成功、撤銷必須可用）
+時間精度（毫秒，內部以 float 秒儲存，顯示與寫檔四捨五入至 ms）
+操作效率（打軸路徑最短化）
+跨平台可用性（尤其 iPadOS Chrome 的檔案/剪貼板限制）
+視覺一致性（暗黑主題不可關閉）
+
+核心功能列表
+
+| 功能 | 說明 | 狀態 |
+|------|------|------|
+| 音頻載入與波形顯示 | Web Audio decodeAudioData 解碼為 PCM，繪製綠色波形（min/max 包絡） | ✅ |
+| 時間軸橫向縮放 | 1s ~ 300s 可視範圍；滾輪以游標為錨點縮放；雙指捏合；平板 ± 按鈕 | ✅ |
+| 垂直增益縮放 | 右側滑桿 / Ctrl+滾輪，0.5x ~ 5x，僅影響視覺不影響音量 | ✅ |
+| SRT 匯入 | UTF-8，容錯 \r\n、BOM、缺序號、多行文本、./, 毫秒分隔符 | ✅ |
+| SRT 匯出 / 儲存 | 標準 UTF-8 + LF，序號自動重排；iOS 走彈窗三途徑 | ✅ |
+| 字幕時間調整 | 左鍵設開始、右鍵設結束、拖動紅藍線微調、雙擊設結束（觸控） | ✅ |
+| 字幕文字編輯 | 編輯區多行 textarea，即時更新列表與 CPS | ✅ |
+| 字幕清單網格 | # / 開始 / 結束 / CPS / 文本，選中高亮，事件委派點擊 | ✅ |
+| 自動重排序 | 時間變更後依開始時間升序重排，並保持選中行跟隨 | ✅ |
+| 播放控制 | 播放選中行（S）、播放最後 500ms（D）、視圖左右平移（A/F） | ✅ |
+| 提交並跳到下一行 | G；若為最後一行則自動追加空白行 | ✅ |
+| 插入空白字幕 | Insert / Ctrl+I / 平板按鈕，插在選中行之後 | ✅ |
+| 刪除字幕 | Delete 鍵 | ✅ |
+| 撤銷系統 | Z / Ctrl+Z，快照堆疊，深度 100 | ✅ |
+| 平板模式 | 手動切換 + pointer: coarse 自動偵測 | ✅ |
+| 暗黑模式 | 全域強制，無開關 | ✅ |
+| 播放頭指示 | 白色虛線隨播放移動，requestAnimationFrame 驅動 | ✅ |
+| 逐行排序欄點擊 | 保留為可擴展（未實作） | ⏳ |
+| 重做 (Redo) | 保留為可擴展（未實作） | ⏳ |
+| 最近檔案清單 | 瀏覽器沙盒限制，未實作 | ⏳ |
+
+資料模型
+
+4.1 Subtitle
+js
+{
+  id:    Number,   // Date.now() + Math.random()，僅作身分識別，不寫入檔案
+  start: Number,   // 秒 (float)，>= 0
+  end:   Number,   // 秒 (float)，> start
+  text:  String    // 可含 \n（多行字幕）；可為空字串
+}
+
+約束：
+end > start（最小間隔 0.01s，由 UI 強制）
+start >= 0
+清單永遠依 start 升序
+
+4.2 AppState
+js
+{
+  subtitles:      Subtitle[],
+  selectedIndex:  Number,     // -1 表示無選取
+  audioBuffer:    AudioBuffer | null,
+  audioDuration:  Number,     // 秒
+  viewStart:      Number,     // 波形視窗左端時間 (秒)
+  viewDuration:   Number,     // 波形視窗寬度 (秒)，1 ~ 300
+  verticalZoom:   Number,     // 0.5 ~ 5.0
+  isTabletMode:   Boolean,
+  history:        Snapshot[], // 快照堆疊
+  maxHistory:     100,
+  isPlaying:      Boolean,
+  playStartTime:  Number,
+  playEndTime:    Number,
+  playheadTime:   Number,
+  fileName:       String,     // 預設 'subtitle.srt'
+  lastExportedSRT:String      // 最近一次生成的 SRT 原文（供複製/分享/下載共用，避免重複讀 DOM）
+}
+
+4.3 時間格式
+
+| 用途 | 格式 | 範例 |
+|------|------|------|
+| SRT 檔案（寫入/解析） | HH:MM:SS,mmm | 00:00:07,500 |
+| UI 顯示 | HH:MM:SS.mmm | 00:00:07.500 |
+| 刻度（>5s 視窗） | M:SS | 1:30 |
+| 刻度（ 120s → 30s    > 60s → 10s    > 30s → 5s
+  > 10s  → 2s     > 5s  → 1s     > 2s  → 0.5s    else → 0.1s
+firstTick = ceil(viewStart / interval) * interval   // 對齊整刻度
+
+6.7 縮放與平移約束
+
+viewDuration ∈ [1, 300]
+viewStart ∈ [0, max(0, audioDuration - viewDuration)]
+滾輪縮放以游標下的時間點為不動點：viewStart = timeAtCursor - (x/w) * newDuration
+捏合縮放以雙指中心為不動點，縮放比 = startDistance / currentDistance
+
+互動設計
+
+7.1 鍵盤（桌面模式）
+
+| 按鍵 | 功能 | 備註 |
+|------|------|------|
+| S | 播放選中行 | |
+| D | 播放最後 500ms | 行長不足 500ms 時播放整行 |
+| G | 提交並下一行 | 最後一行時追加空白行 |
+| A / F | 視圖左移 / 右移 30% | 不改變選中行 |
+| Z | 撤銷 | 可連按 |
+| Space | 同 S | |
+| ↑ / ↓ | 上一行 / 下一行 | 自動捲動清單並置中波形 |
+| Ctrl/Cmd + I | 插入空白字幕 | |
+| Ctrl/Cmd + Enter | 同 G（文字框聚焦時亦有效） | |
+| Ctrl/Cmd + Z | 標準撤銷（與 Z 同一實作路徑） | |
+| Delete | 刪除選中行 | |
+
+焦點守則：當 document.activeElement === 文字輸入框 時，除 Ctrl/Cmd+Enter 外，所有單鍵快捷鍵一律失效，避免打字觸發播放/跳行。
+
+7.2 滑鼠（桌面模式）
+
+| 動作 | 功能 |
+|------|------|
+| 左鍵點擊波形 | 設定選中行開始時間（先 pushHistory） |
+| 右鍵點擊波形 | 設定選中行結束時間（contextmenu 已 preventDefault） |
+| 在紅/藍線 ±8px 內按下並拖動 | 微調對應時間，即時重繪 |
+| 左鍵在非標線區拖動 | 平移視圖 |
+| 滾輪 | 水平縮放，錨點為游標 |
+| Ctrl/Cmd + 滾輪 | 垂直增益，同步右側滑桿 |
+
+7.3 觸控（平板模式）
+
+| 手勢 | 功能 | 判定 |
+|------|------|------|
+| 單指輕觸 | 設定開始時間 | touchend 時 !touchMoved && !isDragging |
+| 雙擊（300ms 內） | 設定結束時間 | Date.now() - lastTapTime ' 的行作為時間行（不假設它一定在第 2 行）
+   → 因此可容忍：缺序號、序號前有 BOM、序號行格式異常
+時間行正則：
+   /(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s-->\s(\d{2}:\d{2}:\d{2}[,\.]\d{3})/
+文本 = 時間行之後所有行 join('\n') 後 trim()（保留多行字幕結構）
+全部解析完後依 start 升序排序
+
+讀檔編碼：FileReader.readAsText(file, 'UTF-8')。
+
+8.2 生成（★ v1.3 換行修正重點）
+js
+function generateSRT(subs) {
+  var lines = [];
+  for (var i = 0; i  ' +
+               formatTimeCode(subs[i].end));                    // 時間行
+    lines.push(subs[i].text || '');                             // 文本（可為空行）
+    if (i  00:00:10,500
+早上好。我可以进去吗？
+
+2
+00:00:14,500 --> 00:00:18,000
+喂。我进来了哦。
+
+檔案 I/O 與平台相容性
+
+9.1 問題背景（v1.1 / v1.3 修訂動機）
+
+| 問題 | 平台 | 根因 | 對策 |
+|------|------|------|------|
+| 點「匯出」整個分頁崩潰 | iPad Air 2 / iOS 15.8.7 Chrome | iOS Chrome 對非手勢同步上下文中的 Blob URL + a.click() 處理不穩，叠加大檔同步編碼易導致渲染進程被終止 | 偵測 iOS → 不使用直接下載，改開匯出彈窗 |
+| 貼上後每行之間多出空行 | iOS 複製 → 貼到記事本/微信/Word | ①execCommand('copy') 複製的是 textarea 的 DOM 內容，WebKit 會以 \r\n 序列化選區；②目標程式把 \r\n 再展開為兩次換行 | 改用 navigator.clipboard.writeText(rawString) 直接寫純字串，且字串本身已保證 LF-only |
+| 分享無法帶檔名 | 部分 Android | navigator.share({files}) 未支援 | 降級為 share({text})，再降級為新分頁  |
+
+9.2 iOS 偵測
+js
+var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+註：iPadOS 13+ 預設以「桌面版 Safari」UA 上報，故必須補第二個條件（MacIntel + 多點觸控）。
+
+9.3 匯出決策樹
+
+doExport()
+ ├─ subtitles 為空 → toast「沒有字幕可匯出」，結束
+ ├─ 生成 srtContent（LF-only）→ 存入 state.lastExportedSRT
+ ├─ isIOS ?
+ │    ├─ 是 → 開啟匯出彈窗，textarea 顯示全文（唯讀、可選取）
+ │    │        ├─ [📋 複製全部] → clipboard.writeText(state.lastExportedSRT)
+ │    │        │                   ↳ 失敗 → iosCopyFallback()（臨時 textarea + setSelectionRange）
+ │    │        ├─ [📤 分享/儲存] → navigator.share({files:[File]})
+ │    │        │                   ↳ 不支援 → share({text}) → 不支援 → window.open 
+ │    │        └─ [⬇️ 下載檔案] → try a.click()（部分 iOS 版本可用）
+ │    │                            ↳ 例外 → window.open(blobURL) 由用戶長按儲存
+ │    └─ 否 → downloadFile()：Blob → ObjectURL →  → click
+ │             ↳ setTimeout(10ms) 後再 click，避免同步阻塞
+ │             ↳ 再 setTimeout(100ms) 移除節點與 revokeObjectURL
+ └─ toast 提示結果
+
+9.4 匯出彈窗規格
+
+遮罩 rgba(0,0,0,0.8)，點遮罩空白處或 ✕ 關閉。
+內容區 ，user-select:text + -webkit-user-select:text（必須顯式開啟，因為 body 設了 user-select:none），min-height:300px，line-height:1.4，綠字黑底等寬。
+底部三按鈕：複製 / 分享 / 下載，flex-wrap:wrap 適配窄螢幕。
+所有複製與分享統一取 state.lastExportedSRT（原始字串），不取 textarea.value，杜絕 DOM 往返引入的換行改寫。
+
+9.5 剪貼板複製規範
+js
+// 1) 先標準化（防禦性，即使 generateSRT 已保證 LF）
+content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+// 2) 首選 Async Clipboard API（寫純字串，不受 DOM 序列化影響）
+if (navigator.clipboard && navigator.clipboard.writeText) {
+  navigator.clipboard.writeText(content).then(ok).catch(() => iosCopyFallback(content));
+} else {
+  iosCopyFallback(content);
+}
+
+// 3) 降級：臨時 textarea（固定定位、opacity:0、readonly）
+//    iOS 必須用 focus() + setSelectionRange(0, len)，不能用 select()
+
+9.6 匯入
+
+📄SRT →  → readAsText(UTF-8)
+      → parseSRT → 依 start 排序 → 清空 history → selectedIndex = 0 → renderAll
+      → toast「已載入 SRT: 檔名 (N 行)」
+（input.value 用完即清空，允許重複載入同一檔案）
+
+字幕清單與 CPS
+
+| 欄 | 寬 | 內容 |
+|----|----|------|
+| # | 50px (窄屏 40px) | 序號 = 陣列索引 + 1 |
+| 開始 | 100px (90px) | HH:MM:SS.mmm |
+| 結束 | 100px (90px) | HH:MM:SS.mmm |
+| CPS | 60px (50px) | 一位小數 |
+| 文本 | 1fr | 單行截斷 text-overflow: ellipsis，空文本顯示灰色 (空白) |
+
+斑馬紋：偶數行 #1E1E1E，奇數行 #252525；選中行 #2A4A2A（!important 覆蓋斑馬紋）。
+點擊：使用事件委派綁在 .list-body 上，向上找 .list-row 讀 data-index；避免每行綁監聽器（數百行時的記憶體與捲動效能問題）。
+捲動：-webkit-overflow-scrolling: touch；選中行 scrollIntoView({block:'nearest', behavior:'smooth'})。
+
+10.1 CPS 計算
+
+CPS = (text 去除所有空白字元後的長度) / (end - start)
+dur  25 | #FF4444 | 錯誤（超出閱讀速度） |
+
+編輯區與清單欄共用同一閾值與配色。
+
+撤銷系統
+
+11.1 快照式（Snapshot）設計
+js
+pushHistory():
+  history.push({
+    subtitles: JSON.parse(JSON.stringify(subtitles)),  // 深拷貝
+    selectedIndex
+  });
+  if (history.length > 100) history.shift();
+
+undo():
+  if (!history.length) { toast('沒有可撤銷的操作'); return; }
+  const prev = history.pop();
+  subtitles = prev.subtitles;
+  selectedIndex = prev.selectedIndex;
+  renderAll();
+
+11.2 觸發時機
+
+| 動作 | 是否入堆疊 |
+|------|-----------|
+| 點擊波形設開始 / 設結束 | ✅（單次點擊一次快照） |
+| 拖動紅/藍線 | ✅ 於 mousedown/touchstart 命中標線時入棧一次（拖動過程中的連續更新不重複入棧） |
+| 提交並下一行 (G) | ✅ |
+| 插入空白字幕 | ✅ |
+| 刪除字幕 | ✅ |
+| 文字輸入 | ⚠️ 現行未逐字入棧（避免堆疊爆量）；由 G/插入/刪除的快照間接保護。列為後續可優化項（debounce 合併） |
+| 平移 / 縮放視圖 | ❌（非破壞性操作） |
+
+11.3 語意
+
+撤銷 = 完整還原「行的集合 + 排序 + 時間 + 文本 + 選中索引」，等同回到上一個事務點。連續按可多級回退，最多 100 步。
+
+模式切換
+
+12.1 自動偵測（啟動時）
+js
+if (matchMedia('(pointer: coarse)').matches && window.innerWidth  |
+| 狀態 | 單一全域 state 物件 | 無 store 庫；变更後顯式呼叫 renderAll() / renderEditor() / renderList() / drawWaveform() |
+
+14.1 渲染職責劃分
+
+renderAll() = renderEditor() + renderList() + drawWaveform()
+renderEditor() → 只寫編輯區 5 個欄位 + textarea.value
+renderList()   → 重建 listBody 的 innerHTML（數百行以內可接受）
+drawWaveform() → 全幅重繪 Canvas（含播放頭動畫，由 rAF 驅動）
+
+14.2 事件綁定清單
+
+| 目標 | 事件 | 備註 |
+|------|------|------|
+| canvas | mousedown / mousemove / mouseup / mouseleave / contextmenu / wheel | wheel 需 {passive:false} |
+| canvas | touchstart / touchmove / touchend | 全部 preventDefault + {passive:false} |
+| listBody | click（委派） | |
+| document | keydown | 含焦點守則 |
+| window | resize | → resizeCanvas() |
+| 平板按鈕 ×9 | touchstart + click | |
+| 檔案 input ×2 | change | 用完清空 value |
+
+相容性矩陣
+
+| 環境 | 音頻解碼 | 波形 | 匯出（下載） | 匯出（複製） | 匯出（分享） | 觸控手勢 |
+|------|---------|------|-------------|-------------|-------------|---------|
+| Windows Chrome / Edge | ✅ | ✅ | ✅ 直接下載 | ✅ | ⚠️ 部分支援 | — |
+| macOS Safari | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| Android Chrome | ✅ | ✅ | ✅ | ✅ | ✅ 含檔案 | ✅ |
+| iPadOS 15.x Chrome | ✅ | ✅ | ❌→ 降級新分頁 | ✅（Async API） | ✅（走彈窗） | ✅ |
+| iPadOS Safari | ✅ | ✅ | ⚠️ 視版本 | ✅ | ✅ | ✅ |
+| HarmonyOS 瀏覽器 | ✅ | ✅ | ⚠️ | ✅ | ⚠️ | ✅ |
+
+原則：任何平台都不允許「按了匯出沒反應」。最差路徑也必須讓用戶看到全文並能選取複製。
+
+15.1 舊裝置效能預算（以 iPad Air 2 為基準）
+
+Canvas DPR 上限 2，禁止 3x。
+波形每帧繪製呼叫數 ≤ clientWidth / barWidth 次 fillRect。
+清單重建：≤ 500 行時保持 2000 行可能卡頓 | v2.2：虛擬化 |
+| 4 | 單聲道繪製 | 立體聲細節丟失 | v2.2：雙聲道分軌 |
+| 5 | 無 FFT 頻譜模式 | 與 Aegisub 頻譜視覺有差距 | v2.3：AnalyserNode + 頻譜熱力圖 |
+| 6 | 無拖放排序 / 欄位排序 | 設計文檔 3 節標記為可擴展 | v3.0 |
+| 7 | 無「最近檔案」 | 每次需重選 | 受限於瀏覽器沙盒，改用 File System Access API（僅 Chromium 桌面） |
+| 8 | 音頻必須整檔解碼到記憶體 | 長音頻（>1h）記憶體吃緊 | v2.3：分段解碼 / OfflineAudioContext 預抽樣 |
+| 9 | 無 ASS/SSA 支援 | 僅 SRT | 依需求評估 |
+
+附錄
+
+17.1 快捷鍵總表
+
+| 桌面鍵 | 平板按鈕 | 功能 |
+|--------|---------|------|
+| S / Space | ▶ | 播放選中行 |
+| D | ⏮ | 播放最後 500ms |
+| G / Ctrl+Enter | ✓ | 提交並下一行 |
+| A | ◀◀ | 視圖左移 |
+| F | ▶▶ | 視圖右移 |
+| Z / Ctrl+Z | ↩ | 撤銷 |
+| Insert / Ctrl+I | ➕ | 插入空白字幕 |
+| Delete | —（長按選單，未實作） | 刪除選中行 |
+| ↑ / ↓ | — | 上/下一行 |
+| 滾輪 | 捏合 / − + | 水平縮放 |
+| Ctrl+滾輪 | 右側滑桿 | 垂直增益 |
+| 左鍵 / 單指輕觸 | — | 設開始 |
+| 右鍵 / 雙擊 | — | 設結束 |
+
+17.2 Toast 訊息一覽
+
+Subber 已就緒 (iOS 模式) / 已載入音頻: X (N.Ns) / 音頻解碼失敗 / 已載入 SRT: X (N 行) / SRT 已匯出 / 已複製到剪貼板 / 複製失敗，請手動選取複製 / 分享成功 / 分享失敗 / 已在新分頁開啟 / 請在開啟的頁面中手動儲存 / 下載已觸發 / 沒有字幕可匯出 / 已提交，進入下一行 / 已插入空白字幕 / 已刪除字幕 / 已撤銷 / 沒有可撤銷的操作
+
+17.3 驗收清單（QA Checklist）
+
+檔案 I/O
+[ ] 載入 mp3/wav/m4a/flac 均能解碼並顯示波形
+[ ] 載入含 BOM、CRLF、缺序號、多行文本的 SRT 均能正確解析
+[ ] 匯出檔以 Aegisub / VLC / ffmpeg 開啟無報錯
+[ ] 匯出檔以純文字編輯器檢視：每塊之間恰好一個空行，無連續兩個空行
+[ ] 複製後貼到 iOS 備忘錄 / 微信 / Word，換行與原始 SRT 一致，無多餘空行
+[ ] iPad Air 2 (iOS 15.8.7) Chrome 點「📤匯出」不崩潰，彈窗正常顯示
+
+打軸
+[ ] S/D/G/A/F/Z 六鍵行為符合規格，文字框聚焦時不誤觸發
+[ ] 左鍵設開始、右鍵設結束，紅藍線位置與數值同步
+[ ] 拖動紅線越過藍線時，自動 clamp 為 end - 0.01s
+[ ] 修改時間後清單自動重排，選中行跟隨移動
+[ ] G 在最後一行時正確追加空白行並選中
+
+平板
+[ ] 九個按鈕單指點按均單次觸發（無雙觸發）
+[ ] 捏合縮放以雙指中心為錨點
+[ ] 單指拖空白處平移視圖，拖標線微調時間，兩者不混淆
+[ ] 雙擊設結束時間
+[ ] 底部按鈕不遮擋清單最後一行
+[ ] 平板模式下編輯區與桌面模式佈局一致（左資訊右文字框）
+
+視覺
+[ ] 全站無亮色殘留；CPS 三級配色正確
+[ ] 選中區間高亮與紅藍線標籤不溢出畫布
+[ ] 旋轉螢幕 / resize 後波形立即重算尺寸，無拉伸模糊

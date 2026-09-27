@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Subber - 音頻字幕編輯器</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/fonts/jetbrains-mono@latest/latin-400-normal.css">
+<style>
+:root {
+  --bg-primary: #121212;
+  --bg-secondary: #1E1E1E;
+  --bg-tertiary: #252525;
+  --bg-selected: #2A4A2A;
+  --text-primary: #CCCCCC;
+  --text-secondary: #888888;
+  --accent-green: #00FF00;
+  --accent-green-dim: #00CC00;
+  --accent-red: #FF4444;
+  --accent-blue: #4488FF;
+  --warning-yellow: #FFD700;
+  --warning-red: #FF4444;
+  --border-color: #333333;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'JetBrains Mono', monospace, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+  z-index: 10;
+  flex-shrink: 0;
+}
+.header h1 { font-size: 18px; color: var(--accent-green); margin-right: 20px; }
+.btn {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn:hover { background: #333; border-color: #555; }
+.btn:active { background: #444; }
+.btn-primary { border-color: var(--accent-green-dim); color: var(--accent-green); }
+.btn-primary:hover { background: rgba(0, 255, 0, 0.1); }
+.spacer { flex: 1; }
+
+.main-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.waveform-container {
+  position: relative;
+  height: 200px;
+  min-height: 120px;
+  background: #000000;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-shrink: 0;
+}
+#waveformCanvas { flex: 1; display: block; cursor: crosshair; touch-action: none; }
+.vertical-zoom {
+  width: 40px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--border-color);
+  padding: 10px 0;
+}
+.vertical-zoom input[type="range"] {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 20px;
+  height: 90%;
+  background: transparent;
+}
+
+.editor-container {
+  padding: 10px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+.editor-info { display: flex; flex-direction: column; gap: 6px; min-width: 260px; }
+.editor-row { display: flex; gap: 12px; font-size: 13px; }
+.editor-label { color: var(--text-secondary); min-width: 50px; }
+.editor-value { color: var(--accent-green); font-weight: bold; }
+.editor-value.cps-warn { color: var(--warning-yellow); }
+.editor-value.cps-error { color: var(--warning-red); }
+.text-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 50px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.text-input:focus { outline: none; border-color: var(--accent-green-dim); }
+
+.list-container {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  min-height: 0;
+}
+.list-header {
+  display: grid;
+  grid-template-columns: 50px 100px 100px 60px 1fr;
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.list-body { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.list-row {
+  display: grid;
+  grid-template-columns: 50px 100px 100px 60px 1fr;
+  padding: 6px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid #222;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.list-row:nth-child(even) { background: var(--bg-secondary); }
+.list-row:nth-child(odd) { background: var(--bg-tertiary); }
+.list-row:hover { background: #2A2A2A; }
+.list-row.selected { background: var(--bg-selected) !important; }
+.list-row .col-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-row .col-cps.warn { color: var(--warning-yellow); }
+.list-row .col-cps.error { color: var(--warning-red); }
+
+.export-modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.8);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+.export-modal-overlay.show { display: flex; }
+.export-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.export-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.export-modal-header h3 { color: var(--accent-green); font-size: 16px; }
+.export-modal-body { flex: 1; overflow: auto; padding: 0; }
+.export-modal-body textarea {
+  width: 100%;
+  min-height: 300px;
+  background: var(--bg-primary);
+  color: var(--accent-green);
+  border: none;
+  padding: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  resize: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.export-modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.tablet-controls {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 10px 12px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 100;
+}
+.tablet-controls .ctrl-group { display: flex; gap: 6px; pointer-events: auto; flex-wrap: wrap; }
+.tablet-btn {
+  min-width: 50px;
+  height: 50px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: all 0.15s;
+  padding: 4px 6px;
+}
+.tablet-btn:active { background: rgba(0, 255, 0, 0.3); transform: scale(0.93); }
+.tablet-btn .icon { font-size: 18px; line-height: 1; }
+.tablet-btn .label { font-size: 9px; margin-top: 2px; }
+.tablet-btn.accent { border-color: var(--accent-green-dim); color: var(--accent-green); }
+
+body.tablet-mode .tablet-controls { display: flex; }
+body.tablet-mode .list-container { padding-bottom: 80px; }
+body.tablet-mode .header .desktop-only { display: none; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+.hidden-input { display: none; }
+
+.toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: var(--bg-tertiary);
+  color: var(--accent-green);
+  padding: 10px 24px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-green-dim);
+  font-size: 14px;
+  z-index: 10000;
+  transition: transform 0.3s ease;
+  pointer-events: none;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+@media (max-width: 768px) {
+  .header { padding: 6px 10px; gap: 6px; overflow-x: auto; }
+  .header h1 { font-size: 15px; margin-right: 8px; }
+  .btn { padding: 5px 10px; font-size: 12px; }
+  .editor-container { padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
+  .editor-info { min-width: unset; flex: 1 1 100%; }
+  .text-input { flex: 1 1 100%; min-height: 40px; }
+  .list-header, .list-row { grid-template-columns: 40px 90px 90px 50px 1fr; font-size: 11px; padding: 5px 10px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Subber</h1>
+  <button class="btn" id="btnOpenAudio">📂 音頻</button>
+  <button class="btn" id="btnOpenSRT">📄 SRT</button>
+  <button class="btn desktop-only" id="btnSaveSRT">💾 儲存</button>
+  <button class="btn btn-primary" id="btnExportSRT">📤 匯出</button>
+  <div class="spacer"></div>
+  <button class="btn" id="btnToggleMode">📱 平板</button>
+</div>
+
+<div class="main-container">
+  <div class="waveform-container">
+    <canvas id="waveformCanvas"></canvas>
+    <div class="vertical-zoom">
+      <input type="range" id="verticalZoomSlider" min="1" max="50" value="10">
+    </div>
+  </div>
+
+  <div class="editor-container">
+    <div class="editor-info">
+      <div class="editor-row">
+        <span class="editor-label">行號:</span>
+        <span class="editor-value" id="editIndex">-</span>
+        <span class="editor-label" style="margin-left:12px">時長:</span>
+        <span class="editor-value" id="editDuration">0.000s</span>
+      </div>
+      <div class="editor-row">
+        <span class="editor-label">開始:</span>
+        <span class="editor-value" id="editStart">00:00:00.000</span>
+        <span class="editor-label" style="margin-left:12px">CPS:</span>
+        <span class="editor-value" id="editCPS">0.0</span>
+      </div>
+      <div class="editor-row">
+        <span class="editor-label">結束:</span>
+        <span class="editor-value" id="editEnd">00:00:00.000</span>
+      </div>
+    </div>
+    <textarea class="text-input" id="editText" placeholder="在此輸入字幕文本..."></textarea>
+  </div>
+
+  <div class="list-container">
+    <div class="list-header">
+      <div>#</div>
+      <div>開始</div>
+      <div>結束</div>
+      <div>CPS</div>
+      <div>文本</div>
+    </div>
+    <div class="list-body" id="listBody"></div>
+  </div>
+</div>
+
+<div class="export-modal-overlay" id="exportModal">
+  <div class="export-modal">
+    <div class="export-modal-header">
+      <h3>📤 匯出 SRT</h3>
+      <button class="btn" id="btnCloseExport">✕ 關閉</button>
+    </div>
+    <div class="export-modal-body">
+      <textarea id="exportTextarea" readonly></textarea>
+    </div>
+    <div class="export-modal-footer">
+      <button class="btn" id="btnCopySRT">📋 複製全部</button>
+      <button class="btn btn-primary" id="btnShareSRT">📤 分享/儲存</button>
+      <button class="btn" id="btnDownloadSRT">⬇️ 下載檔案</button>
+    </div>
+  </div>
+</div>
+
+<div class="tablet-controls">
+  <div class="ctrl-group">
+    <div class="tablet-btn" id="tbPrev"><span class="icon">◀◀</span><span class="label">A</span></div>
+    <div class="tablet-btn" id="tbNext"><span class="icon">▶▶</span><span class="label">F</span></div>
+    <div class="tablet-btn" id="tbZoomOut"><span class="icon">−</span><span class="label">縮小</span></div>
+    <div class="tablet-btn" id="tbZoomIn"><span class="icon">+</span><span class="label">放大</span></div>
+    <div class="tablet-btn" id="tbInsert"><span class="icon">➕</span><span class="label">插入</span></div>
+  </div>
+  <div class="ctrl-group">
+    <div class="tablet-btn accent" id="tbPlay"><span class="icon">▶</span><span class="label">S 播放</span></div>
+    <div class="tablet-btn" id="tbPlay500"><span class="icon">⏮</span><span class="label">D 500ms</span></div>
+    <div class="tablet-btn accent" id="tbCommit"><span class="icon">✓</span><span class="label">G 提交</span></div>
+    <div class="tablet-btn" id="tbUndo"><span class="icon">↩</span><span class="label">Z 撤銷</span></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<input type="file" class="hidden-input" id="inputAudio" accept="audio/*">
+<input type="file" class="hidden-input" id="inputSRT" accept=".srt">
+
+<script>
+var state = {
+  subtitles: [],
+  selectedIndex: -1,
+  audioBuffer: null,
+  audioDuration: 0,
+  viewStart: 0,
+  viewDuration: 10,
+  verticalZoom: 1.0,
+  isTabletMode: false,
+  history: [],
+  maxHistory: 100,
+  isPlaying: false,
+  playStartTime: 0,
+  playEndTime: 0,
+  playheadTime: 0,
+  animFrameId: null,
+  fileName: 'subtitle.srt',
+  _playCtxStart: 0
+};
+
+var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+var canvas = document.getElementById('waveformCanvas');
+var ctx = canvas.getContext('2d');
+var listBody = document.getElementById('listBody');
+var editIndex = document.getElementById('editIndex');
+var editStart = document.getElementById('editStart');
+var editEnd = document.getElementById('editEnd');
+var editDuration = document.getElementById('editDuration');
+var editCPS = document.getElementById('editCPS');
+var editText = document.getElementById('editText');
+var verticalZoomSlider = document.getElementById('verticalZoomSlider');
+var toastEl = document.getElementById('toast');
+var exportModal = document.getElementById('exportModal');
+var exportTextarea = document.getElementById('exportTextarea');
+
+var audioCtx = null;
+var sourceNode = null;
+
+function initAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function stopAudio() {
+  if (sourceNode) {
+    try { sourceNode.onended = null; sourceNode.stop(); } catch(e) {}
+    sourceNode = null;
+  }
+  state.isPlaying = false;
+  if (state.animFrameId) {
+    cancelAnimationFrame(state.animFrameId);
+    state.animFrameId = null;
+  }
+}
+
+function playAudio(start, end) {
+  if (!state.audioBuffer) return;
+  initAudioContext();
+  stopAudio();
+  
+  start = Math.max(0, start);
+  end = Math.min(state.audioDuration, end);
+  if (end <= start) return;
+
+  sourceNode = audioCtx.createBufferSource();
+  sourceNode.buffer = state.audioBuffer;
+  sourceNode.connect(audioCtx.destination);
+  
+  state.playStartTime = start;
+  state.playEndTime = end;
+  state._playCtxStart = audioCtx.currentTime;
+  state.playheadTime = start;
+  state.isPlaying = true;
+
+  sourceNode.start(0, start, end - start);
+  sourceNode.onended = function() {
+    state.isPlaying = false;
+    state.playheadTime = end;
+    drawWaveform();
+  };
+  state.animFrameId = requestAnimationFrame(updatePlayhead);
+}
+
+function updatePlayhead() {
+  if (!state.isPlaying) return;
+  state.playheadTime = state.playStartTime + (audioCtx.currentTime - state._playCtxStart);
+  if (state.playheadTime >= state.playEndTime) {
+    state.playheadTime = state.playEndTime;
+    state.isPlaying = false;
+  }
+  drawWaveform();
+  if (state.isPlaying) {
+    state.animFrameId = requestAnimationFrame(updatePlayhead);
+  }
+}
+
+function parseSRT(text) {
+  var subs = [];
+  var blocks = text.trim().replace(/\r\n/g, '\n').split(/\n\n+/);
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i];
+    var lines = block.split('\n');
+    if (lines.length < 2) continue;
+    var timeMatch = lines[1].match(/(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})/);
+    if (!timeMatch) continue;
+    var start = parseTimeCode(timeMatch[1]);
+    var end = parseTimeCode(timeMatch[2]);
+    var textContent = lines.slice(2).join('\n').trim();
+    subs.push({ id: Date.now() + Math.random(), start: start, end: end, text: textContent });
+  }
+  subs.sort(function(a, b) { return a.start - b.start; });
+  return subs;
+}
+
+function parseTimeCode(tc) {
+  var parts = tc.replace(',', '.').split(':');
+  return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
+}
+
+function formatTimeCode(seconds) {
+  if (seconds < 0) seconds = 0;
+  var h = Math.floor(seconds / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  var s = Math.floor(seconds % 60);
+  var ms = Math.round((seconds % 1) * 1000);
+  return pad(h) + ':' + pad(m) + ':' + pad(s) + ',' + pad(ms, 3);
+}
+
+function formatTimeDisplay(seconds) {
+  if (seconds < 0) seconds = 0;
+  var h = Math.floor(seconds / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  var s = Math.floor(seconds % 60);
+  var ms = Math.round((seconds % 1) * 1000);
+  return pad(h) + ':' + pad(m) + ':' + pad(s) + '.' + pad(ms, 3);
+}
+
+function pad(num, size) {
+  size = size || 2;
+  var s = String(num);
+  while (s.length < size) s = '0' + s;
+  return s;
+}
+
+function generateSRT(subs) {
+  var result = [];
+  for (var i = 0; i < subs.length; i++) {
+    var sub = subs[i];
+    result.push((i + 1) + '\n' + formatTimeCode(sub.start) + ' --> ' + formatTimeCode(sub.end) + '\n' + sub.text);
+  }
+  return result.join('\n\n') + '\n';
+}
+
+function pushHistory() {
+  state.history.push({
+    subtitles: JSON.parse(JSON.stringify(state.subtitles)),
+    selectedIndex: state.selectedIndex
+  });
+  if (state.history.length > state.maxHistory) state.history.shift();
+}
+
+function undo() {
+  if (state.history.length === 0) { showToast('沒有可撤銷的操作'); return; }
+  var prev = state.history.pop();
+  state.subtitles = prev.subtitles;
+  state.selectedIndex = prev.selectedIndex;
+  renderAll();
+  showToast('已撤銷');
+}
+
+function selectSubtitle(index) {
+  if (index < 0 || index >= state.subtitles.length) return;
+  state.selectedIndex = index;
+  renderEditor();
+  renderList();
+  scrollToSelected();
+  var sub = state.subtitles[index];
+  var center = (sub.start + sub.end) / 2;
+  if (sub.start < state.viewStart || sub.end > state.viewStart + state.viewDuration) {
+    state.viewStart = Math.max(0, center - state.viewDuration / 2);
+    if (state.audioDuration > 0) {
+      state.viewStart = Math.min(state.viewStart, Math.max(0, state.audioDuration - state.viewDuration));
+    }
+  }
+  drawWaveform();
+}
+
+function updateCurrentSubtitle(field, value) {
+  if (state.selectedIndex < 0 || state.selectedIndex >= state.subtitles.length) return;
+  var sub = state.subtitles[state.selectedIndex];
+  if (field === 'start') {
+    sub.start = Math.max(0, Math.min(value, sub.end - 0.01));
+  } else if (field === 'end') {
+    sub.end = Math.max(sub.start + 0.01, value);
+  } else if (field === 'text') {
+    sub.text = value;
+  }
+  if (field === 'start' || field === 'end') {
+    var currentSub = state.subtitles.splice(state.selectedIndex, 1)[0];
+    state.subtitles.push(currentSub);
+    state.subtitles.sort(function(a, b) { return a.start - b.start; });
+    state.selectedIndex = state.subtitles.indexOf(currentSub);
+  }
+  renderEditor();
+  renderList();
+  drawWaveform();
+}
+
+function commitAndNext() {
+  pushHistory();
+  if (state.selectedIndex >= 0 && state.selectedIndex < state.subtitles.length - 1) {
+    selectSubtitle(state.selectedIndex + 1);
+  } else {
+    var lastEnd = state.subtitles.length > 0 ? state.subtitles[state.subtitles.length - 1].end : 0;
+    state.subtitles.push({ id: Date.now() + Math.random(), start: lastEnd, end: lastEnd + 2, text: '' });
+    state.selectedIndex = state.subtitles.length - 1;
+    renderAll();
+  }
+  showToast('已提交，進入下一行');
+}
+
+function insertBlankSubtitle() {
+  pushHistory();
+  var idx = state.selectedIndex;
+  var startTime = 0;
+  if (idx >= 0 && idx < state.subtitles.length) {
+    startTime = state.subtitles[idx].end;
+  } else if (state.subtitles.length > 0) {
+    startTime = state.subtitles[state.subtitles.length - 1].end;
+  }
+  var newSub = { id: Date.now() + Math.random(), start: startTime, end: startTime + 2, text: '' };
+  var insertAt = idx >= 0 ? idx + 1 : state.subtitles.length;
+  state.subtitles.splice(insertAt, 0, newSub);
+  state.selectedIndex = insertAt;
+  renderAll();
+  showToast('已插入空白字幕');
+}
+
+function renderAll() {
+  renderEditor();
+  renderList();
+  drawWaveform();
+}
+
+function renderEditor() {
+  var sub = state.subtitles[state.selectedIndex];
+  if (!sub) {
+    editIndex.textContent = '-';
+    editStart.textContent = '00:00:00.000';
+    editEnd.textContent = '00:00:00.000';
+    editDuration.textContent = '0.000s';
+    editCPS.textContent = '0.0';
+    editCPS.className = 'editor-value';
+    editText.value = '';
+    return;
+  }
+  editIndex.textContent = '#' + (state.selectedIndex + 1);
+  editStart.textContent = formatTimeDisplay(sub.start);
+  editEnd.textContent = formatTimeDisplay(sub.end);
+  var dur = sub.end - sub.start;
+  editDuration.textContent = dur.toFixed(3) + 's';
+  var charCount = sub.text.replace(/\s/g, '').length;
+  var cps = dur > 0 ? (charCount / dur) : 0;
+  editCPS.textContent = cps.toFixed(1);
+  editCPS.className = 'editor-value';
+  if (cps > 25) editCPS.className = 'editor-value cps-error';
+  else if (cps > 20) editCPS.className = 'editor-value cps-warn';
+  editText.value = sub.text;
+}
+
+function renderList() {
+  listBody.innerHTML = '';
+  for (var i = 0; i < state.subtitles.length; i++) {
+    var sub = state.subtitles[i];
+    var row = document.createElement('div');
+    row.className = 'list-row' + (i === state.selectedIndex ? ' selected' : '');
+    var dur = sub.end - sub.start;
+    var charCount = sub.text.replace(/\s/g, '').length;
+    var cps = dur > 0 ? (charCount / dur) : 0;
+    var cpsClass = 'col-cps';
+    if (cps > 25) cpsClass += ' error';
+    else if (cps > 20) cpsClass += ' warn';
+    row.innerHTML = '<div>' + (i + 1) + '</div>' +
+      '<div>' + formatTimeDisplay(sub.start) + '</div>' +
+      '<div>' + formatTimeDisplay(sub.end) + '</div>' +
+      '<div class="' + cpsClass + '">' + cps.toFixed(1) + '</div>' +
+      '<div class="col-text">' + escapeHtml(sub.text || '(空白)') + '</div>';
+    row.setAttribute('data-index', i);
+    listBody.appendChild(row);
+  }
+}
+
+listBody.addEventListener('click', function(e) {
+  var target = e.target;
+  while (target && target !== listBody) {
+    if (target.classList && target.classList.contains('list-row')) {
+      var idx = parseInt(target.getAttribute('data-index'));
+      if (!isNaN(idx)) selectSubtitle(idx);
+      return;
+    }
+    target = target.parentElement;
+  }
+});
+
+function scrollToSelected() {
+  var rows = listBody.querySelectorAll('.list-row');
+  if (rows[state.selectedIndex]) {
+    rows[state.selectedIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function escapeHtml(text) {
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function resizeCanvas() {
+  var container = canvas.parentElement;
+  var rect = container.getBoundingClientRect();
+  var w = rect.width - 40;
+  var h = rect.height;
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawWaveform();
+}
+
+function drawWaveform() {
+  var w = canvas.clientWidth;
+  var h = canvas.clientHeight;
+  if (w === 0 || h === 0) return;
+  var viewEnd = state.viewStart + state.viewDuration;
+  
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, w, h);
+  
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(0, 0, w, 24);
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 24);
+  ctx.lineTo(w, 24);
+  ctx.stroke();
+  
+  var tickInterval = getTickInterval(state.viewDuration);
+  var firstTick = Math.ceil(state.viewStart / tickInterval) * tickInterval;
+  ctx.fillStyle = '#888';
+  ctx.font = '11px JetBrains Mono, monospace';
+  ctx.textAlign = 'center';
+  for (var t = firstTick; t <= viewEnd; t += tickInterval) {
+    var x = timeToX(t, w);
+    ctx.beginPath();
+    ctx.moveTo(x, 18);
+    ctx.lineTo(x, 24);
+    ctx.strokeStyle = '#555';
+    ctx.stroke();
+    ctx.fillText(formatTickTime(t), x, 14);
+  }
+  
+  var sub = state.subtitles[state.selectedIndex];
+  if (sub) {
+    var x1 = timeToX(sub.start, w);
+    var x2 = timeToX(sub.end, w);
+    ctx.fillStyle = 'rgba(0, 204, 0, 0.12)';
+    ctx.fillRect(Math.max(0, x1), 24, Math.min(w, x2) - Math.max(0, x1), h - 24);
+  }
+  
+  if (state.audioBuffer) {
+    var channelData = state.audioBuffer.getChannelData(0);
+    var sampleRate = state.audioBuffer.sampleRate;
+    var startSample = Math.floor(state.viewStart * sampleRate);
+    var endSample = Math.floor(viewEnd * sampleRate);
+    var totalSamples = endSample - startSample;
+    var midY = 24 + (h - 24) / 2;
+    var amp = ((h - 24) / 2) * state.verticalZoom;
+    
+    ctx.fillStyle = '#00FF00';
+    var pixelsPerBar = Math.max(1, Math.floor(w / totalSamples * 100));
+    
+    for (var px = 0; px < w; px += pixelsPerBar) {
+      var sStart = startSample + Math.floor((px / w) * totalSamples);
+      var sEnd = startSample + Math.floor(((px + pixelsPerBar) / w) * totalSamples);
+      var maxVal = -1.0;
+      var step = Math.max(1, Math.floor((sEnd - sStart) / 80));
+      for (var s = sStart; s < sEnd && s < channelData.length; s += step) {
+        if (s >= 0) {
+          var absVal = Math.abs(channelData[s]);
+          if (absVal > maxVal) maxVal = absVal;
+        }
+      }
+      var barH = maxVal * amp;
+      ctx.fillRect(px, midY - barH, Math.max(1, pixelsPerBar - 1), barH * 2);
+    }
+  }
+  
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  var centerY = 24 + (h - 24) / 2;
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(w, centerY);
+  ctx.stroke();
+  
+  if (sub) {
+    var sx1 = timeToX(sub.start, w);
+    var sx2 = timeToX(sub.end, w);
+    
+    ctx.strokeStyle = '#FF4444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx1, 24);
+    ctx.lineTo(sx1, h);
+    ctx.stroke();
+    
+    ctx.strokeStyle = '#4488FF';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx2, 24);
+    ctx.lineTo(sx2, h);
+    ctx.stroke();
+    
+    ctx.font = 'bold 10px JetBrains Mono, monospace';
+    if (sx1 > 0 && sx1 < w) {
+      ctx.fillStyle = '#FF4444';
+      ctx.textAlign = 'left';
+      ctx.fillText(formatTimeDisplay(sub.start), Math.min(sx1 + 4, w - 90), 36);
+    }
+    if (sx2 > 0 && sx2 < w) {
+      ctx.fillStyle = '#4488FF';
+      ctx.textAlign = 'right';
+      ctx.fillText(formatTimeDisplay(sub.end), Math.max(sx2 - 4, 90), 36);
+    }
+  }
+  
+  if (state.isPlaying || state.playheadTime > 0) {
+    var ppx = timeToX(state.playheadTime, w);
+    if (ppx >= 0 && ppx <= w) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(ppx, 24);
+      ctx.lineTo(ppx, h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+function timeToX(time, w) {
+  return ((time - state.viewStart) / state.viewDuration) * w;
+}
+
+function xToTime(x, w) {
+  return state.viewStart + (x / w) * state.viewDuration;
+}
+
+function getTickInterval(duration) {
+  if (duration > 120) return 30;
+  if (duration > 60) return 10;
+  if (duration > 30) return 5;
+  if (duration > 10) return 2;
+  if (duration > 5) return 1;
+  if (duration > 2) return 0.5;
+  return 0.1;
+}
+
+function formatTickTime(t) {
+  var m = Math.floor(t / 60);
+  var s = Math.floor(t % 60);
+  if (state.viewDuration < 5) {
+    var ms = Math.floor((t % 1) * 10);
+    return m + ':' + pad(s) + '.' + ms;
+  }
+  return m + ':' + pad(s);
+}
+
+var isDragging = false;
+var dragType = null;
+var dragStartX = 0;
+var dragStartViewStart = 0;
+
+canvas.addEventListener('mousedown', function(e) {
+  e.preventDefault();
+  var rect = canvas.getBoundingClientRect();
+  var x = e.clientX - rect.left;
+  var w = canvas.clientWidth;
+  var time = xToTime(x, w);
+  var sub = state.subtitles[state.selectedIndex];
+  
+  if (sub) {
+    var startX = timeToX(sub.start, w);
+    var endX = timeToX(sub.end, w);
+    if (Math.abs(x - startX) < 8) { isDragging = true; dragType = 'start'; return; }
+    if (Math.abs(x - endX) < 8) { isDragging = true; dragType = 'end'; return; }
+  }
+  
+  if (e.button === 0) {
+    if (sub) { pushHistory(); updateCurrentSubtitle('start', time); }
+    isDragging = true; dragType = 'pan'; dragStartX = x; dragStartViewStart = state.viewStart;
+  }
+});
+
+canvas.addEventListener('contextmenu', function(e) {
+  e.preventDefault();
+  var rect = canvas.getBoundingClientRect();
+  var x = e.clientX - rect.left;
+  var w = canvas.clientWidth;
+  var time = xToTime(x, w);
+  var sub = state.subtitles[state.selectedIndex];
+  if (sub) { pushHistory(); updateCurrentSubtitle('end', time); }
+});
+
+canvas.addEventListener('mousemove', function(e) {
+  if (!isDragging) return;
+  var rect = canvas.getBoundingClientRect();
+  var x = e.clientX - rect.left;
+  var w = canvas.clientWidth;
+  if (dragType === 'start' || dragType === 'end') {
+    updateCurrentSubtitle(dragType, xToTime(x, w));
+  } else if (dragType === 'pan') {
+    var dx = x - dragStartX;
+    state.viewStart = Math.max(0, dragStartViewStart - (dx / w) * state.viewDuration);
+    if (state.audioDuration > 0) state.viewStart = Math.min(state.viewStart, Math.max(0, state.audioDuration - state.viewDuration));
+    drawWaveform();
+  }
+});
+
+canvas.addEventListener('mouseup', function() { isDragging = false; dragType = null; });
+canvas.addEventListener('mouseleave', function() { isDragging = false; dragType = null; });
+
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  var rect = canvas.getBoundingClientRect();
+  var x = e.clientX - rect.left;
+  var w = canvas.clientWidth;
+  if (e.ctrlKey || e.metaKey) {
+    state.verticalZoom = Math.max(0.5, Math.min(5, state.verticalZoom * (e.deltaY > 0 ? 0.9 : 1.1)));
+    verticalZoomSlider.value = state.verticalZoom * 10;
+  } else {
+    var timeAtCursor = xToTime(x, w);
+    var factor = e.deltaY > 0 ? 1.2 : 0.8;
+    state.viewDuration = Math.max(1, Math.min(300, state.viewDuration * factor));
+    state.viewStart = timeAtCursor - (x / w) * state.viewDuration;
+    if (state.viewStart < 0) state.viewStart = 0;
+    if (state.audioDuration > 0) state.viewStart = Math.min(state.viewStart, Math.max(0, state.audioDuration - state.viewDuration));
+  }
+  drawWaveform();
+}, { passive: false });
+
+var touchStartDist = 0;
+var touchStartDuration = 0;
+var touchStartX = 0;
+var touchStartViewStart = 0;
+var touchCount = 0;
+var touchMoved = false;
+var lastTapTime = 0;
+
+canvas.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  touchCount = e.touches.length;
+  touchMoved = false;
+  
+  if (touchCount === 1) {
+    touchStartX = e.touches[0].clientX;
+    touchStartViewStart = state.viewStart;
+    
+    var now = Date.now();
+    if (now - lastTapTime < 300) {
+      var rect = canvas.getBoundingClientRect();
+      var x = e.touches[0].clientX - rect.left;
+      var time = xToTime(x, canvas.clientWidth);
+      var sub = state.subtitles[state.selectedIndex];
+      if (sub) { pushHistory(); updateCurrentSubtitle('end', time); }
+      lastTapTime = 0;
+      return;
+    }
+    lastTapTime = now;
+    
+    var rect2 = canvas.getBoundingClientRect();
+    var x2 = e.touches[0].clientX - rect2.left;
+    var w = canvas.clientWidth;
+    var sub2 = state.subtitles[state.selectedIndex];
+    if (sub2) {
+      if (Math.abs(x2 - timeToX(sub2.start, w)) < 20) { isDragging = true; dragType = 'start'; return; }
+      if (Math.abs(x2 - timeToX(sub2.end, w)) < 20) { isDragging = true; dragType = 'end'; return; }
+    }
+  } else if (touchCount === 2) {
+    var dx = e.touches[0].clientX - e.touches[1].clientX;
+    var dy = e.touches[0].clientY - e.touches[1].clientY;
+    touchStartDist = Math.sqrt(dx * dx + dy * dy);
+    touchStartDuration = state.viewDuration;
+    touchStartX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    touchStartViewStart = state.viewStart;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', function(e) {
+  e.preventDefault();
+  touchMoved = true;
+  
+  if (touchCount === 1 && isDragging) {
+    var rect = canvas.getBoundingClientRect();
+    var x = e.touches[0].clientX - rect.left;
+    updateCurrentSubtitle(dragType, xToTime(x, canvas.clientWidth));
+  } else if (touchCount === 1 && !isDragging) {
+    var dx = e.touches[0].clientX - touchStartX;
+    state.viewStart = Math.max(0, touchStartViewStart - (dx / canvas.clientWidth) * state.viewDuration);
+    if (state.audioDuration > 0) state.viewStart = Math.min(state.viewStart, Math.max(0, state.audioDuration - state.viewDuration));
+    drawWaveform();
+  } else if (touchCount === 2 && e.touches.length === 2) {
+    var dx2 = e.touches[0].clientX - e.touches[1].clientX;
+    var dy2 = e.touches[0].clientY - e.touches[1].clientY;
+    var dist = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+    var newDuration = Math.max(1, Math.min(300, touchStartDuration * (touchStartDist / dist)));
+    var rect2 = canvas.getBoundingClientRect();
+    var centerX = touchStartX - rect2.left;
+    var w = canvas.clientWidth;
+    var timeAtCenter = touchStartViewStart + (centerX / w) * touchStartDuration;
+    state.viewStart = timeAtCenter - (centerX / w) * newDuration;
+    state.viewDuration = newDuration;
+    if (state.viewStart < 0) state.viewStart = 0;
+    if (state.audioDuration > 0) state.viewStart = Math.min(state.viewStart, Math.max(0, state.audioDuration - state.viewDuration));
+    drawWaveform();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', function(e) {
+  e.preventDefault();
+  if (touchCount === 1 && !touchMoved && !isDragging) {
+    var rect = canvas.getBoundingClientRect();
+    var x = e.changedTouches[0].clientX - rect.left;
+    var time = xToTime(x, canvas.clientWidth);
+    var sub = state.subtitles[state.selectedIndex];
+    if (sub) { pushHistory(); updateCurrentSubtitle('start', time); }
+  }
+  isDragging = false; dragType = null;
+  if (e.touches.length === 0) touchCount = 0;
+}, { passive: false });
+
+document.addEventListener('keydown', function(e) {
+  if (document.activeElement === editText) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitAndNext(); }
+    return;
+  }
+  var key = e.key.toLowerCase();
+  if (key === 's') { e.preventDefault(); playSelection(); }
+  else if (key === 'd') { e.preventDefault(); playLast500ms(); }
+  else if (key === 'g') { e.preventDefault(); commitAndNext(); }
+  else if (key === 'f') { e.preventDefault(); panView(0.3); }
+  else if (key === 'a') { e.preventDefault(); panView(-0.3); }
+  else if (key === 'z') { e.preventDefault(); undo(); }
+  else if (key === ' ') { e.preventDefault(); playSelection(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (state.selectedIndex > 0) selectSubtitle(state.selectedIndex - 1); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); if (state.selectedIndex < state.subtitles.length - 1) selectSubtitle(state.selectedIndex + 1); }
+  else if (key === 'i' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); insertBlankSubtitle(); }
+  else if (e.key === 'Delete') { e.preventDefault(); deleteSelected(); }
+});
+
+function playSelection() {
+  var sub = state.subtitles[state.selectedIndex];
+  if (!sub) return;
+  playAudio(sub.start, sub.end);
+}
+
+function playLast500ms() {
+  var sub = state.subtitles[state.selectedIndex];
+  if (!sub) return;
+  playAudio(Math.max(sub.start, sub.end - 0.5), sub.end);
+}
+
+function panView(fraction) {
+  state.viewStart = Math.max(0, state.viewStart + state.viewDuration * fraction);
+  if (state.audioDuration > 0) state.viewStart = Math.min(state.viewStart, Math.max(0, state.audioDuration - state.viewDuration));
+  drawWaveform();
+}
+
+function deleteSelected() {
+  if (state.selectedIndex < 0 || state.selectedIndex >= state.subtitles.length) return;
+  pushHistory();
+  state.subtitles.splice(state.selectedIndex, 1);
+  if (state.selectedIndex >= state.subtitles.length) state.selectedIndex = state.subtitles.length - 1;
+  renderAll();
+  showToast('已刪除字幕');
+}
+
+document.getElementById('btnOpenAudio').addEventListener('click', function() {
+  document.getElementById('inputAudio').click();
+});
+document.getElementById('btnOpenSRT').addEventListener('click', function() {
+  document.getElementById('inputSRT').click();
+});
+
+document.getElementById('inputAudio').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  initAudioContext();
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    audioCtx.decodeAudioData(ev.target.result, function(buffer) {
+      state.audioBuffer = buffer;
+      state.audioDuration = buffer.duration;
+      state.viewStart = 0;
+      state.viewDuration = Math.min(10, state.audioDuration);
+      state.playheadTime = 0;
+      drawWaveform();
+      showToast('已載入音頻: ' + file.name + ' (' + state.audioDuration.toFixed(1) + 's)');
+    }, function() {
+      showToast('音頻解碼失敗');
+    });
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+});
+
+document.getElementById('inputSRT').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  state.fileName = file.name;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    state.subtitles = parseSRT(ev.target.result);
+    state.selectedIndex = state.subtitles.length > 0 ? 0 : -1;
+    state.history = [];
+    renderAll();
+    showToast('已載入 SRT: ' + file.name + ' (' + state.subtitles.length + ' 行)');
+  };
+  reader.readAsText(file, 'UTF-8');
+  e.target.value = '';
+});
+
+document.getElementById('btnSaveSRT').addEventListener('click', function() { doExport(); });
+document.getElementById('btnExportSRT').addEventListener('click', function() { doExport(); });
+
+function doExport() {
+  if (state.subtitles.length === 0) { showToast('沒有字幕可匯出'); return; }
+  var srtContent = generateSRT(state.subtitles);
+  if (isIOS) {
+    exportTextarea.value = srtContent;
+    exportModal.classList.add('show');
+  } else {
+    downloadFile(srtContent, state.fileName);
+  }
+}
+
+function downloadFile(content, filename) {
+  try {
+    var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'subtitle.srt';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    setTimeout(function() {
+      a.click();
+      setTimeout(function() {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    }, 10);
+    showToast('SRT 已匯出');
+  } catch(err) {
+    exportTextarea.value = content;
+    exportModal.classList.add('show');
+  }
+}
+
+document.getElementById('btnCloseExport').addEventListener('click', function() {
+  exportModal.classList.remove('show');
+});
+
+document.getElementById('btnCopySRT').addEventListener('click', function() {
+  exportTextarea.select();
+  exportTextarea.setSelectionRange(0, 999999);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(exportTextarea.value).then(function() {
+      showToast('已複製到剪貼板');
+    }).catch(function() {
+      document.execCommand('copy');
+      showToast('已複製到剪貼板');
+    });
+  } else {
+    document.execCommand('copy');
+    showToast('已複製到剪貼板');
+  }
+});
+
+document.getElementById('btnShareSRT').addEventListener('click', function() {
+  var srtContent = exportTextarea.value;
+  if (navigator.share) {
+    var blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+    var file = new File([blob], state.fileName || 'subtitle.srt', { type: 'text/plain' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'SRT 字幕檔案', text: 'Subber 匯出的字幕' }).then(function() {
+        showToast('分享成功');
+      }).catch(function(err) {
+        if (err.name !== 'AbortError') {
+          navigator.share({ title: 'SRT', text: srtContent }).catch(function() {});
+        }
+      });
+    } else {
+      navigator.share({ title: 'SRT 字幕', text: srtContent }).then(function() {
+        showToast('分享成功');
+      }).catch(function(err) {
+        if (err.name !== 'AbortError') showToast('分享失敗');
+      });
+    }
+  } else {
+    var newWin = window.open('', '_blank');
+    if (newWin) {
+      newWin.document.write('<pre style="font-family:monospace;white-space:pre-wrap;word-wrap:break-word;padding:20px;background:#121212;color:#00FF00;">' + 
+        srtContent.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>');
+      newWin.document.close();
+      showToast('已在新分頁開啟');
+    } else {
+      showToast('無法開啟新分頁，請手動複製');
+    }
+  }
+});
+
+document.getElementById('btnDownloadSRT').addEventListener('click', function() {
+  var content = exportTextarea.value;
+  var encoded = encodeURIComponent(content);
+  var dataUri = 'data:text/plain;charset=utf-8,' + encoded;
+  var a = document.createElement('a');
+  a.href = dataUri;
+  a.download = state.fileName || 'subtitle.srt';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  setTimeout(function() {
+    try {
+      a.click();
+      setTimeout(function() { document.body.removeChild(a); }, 200);
+      showToast('下載已觸發');
+    } catch(err) {
+      document.body.removeChild(a);
+      window.open(dataUri, '_blank');
+      showToast('請在開啟的頁面中手動儲存');
+    }
+  }, 10);
+});
+
+exportModal.addEventListener('click', function(e) {
+  if (e.target === exportModal) exportModal.classList.remove('show');
+});
+
+document.getElementById('btnToggleMode').addEventListener('click', function() {
+  state.isTabletMode = !state.isTabletMode;
+  document.body.classList.toggle('tablet-mode', state.isTabletMode);
+  document.getElementById('btnToggleMode').textContent = state.isTabletMode ? '🖥️ 桌面' : '📱 平板';
+  setTimeout(resizeCanvas, 100);
+});
+
+if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 1024) {
+  state.isTabletMode = true;
+  document.body.classList.add('tablet-mode');
+  document.getElementById('btnToggleMode').textContent = '🖥️ 桌面';
+}
+
+function addTouchBtn(id, handler) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('touchstart', function(e) { e.preventDefault(); handler(); }, { passive: false });
+  el.addEventListener('click', function(e) { e.preventDefault(); handler(); });
+}
+
+addTouchBtn('tbPrev', function() { panView(-0.3); });
+addTouchBtn('tbNext', function() { panView(0.3); });
+addTouchBtn('tbZoomOut', function() { state.viewDuration = Math.min(300, state.viewDuration * 1.3); drawWaveform(); });
+addTouchBtn('tbZoomIn', function() { state.viewDuration = Math.max(1, state.viewDuration * 0.7); drawWaveform(); });
+addTouchBtn('tbInsert', insertBlankSubtitle);
+addTouchBtn('tbPlay', playSelection);
+addTouchBtn('tbPlay500', playLast500ms);
+addTouchBtn('tbCommit', commitAndNext);
+addTouchBtn('tbUndo', undo);
+
+editText.addEventListener('input', function() {
+  if (state.selectedIndex >= 0) updateCurrentSubtitle('text', editText.value);
+});
+
+verticalZoomSlider.addEventListener('input', function() {
+  state.verticalZoom = verticalZoomSlider.value / 10;
+  drawWaveform();
+});
+
+var toastTimeout = null;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(function() {
+    toastEl.classList.remove('show');
+  }, 2500);
+}
+
+window.addEventListener('resize', resizeCanvas);
+
+function loadDemo() {
+  state.subtitles = [
+    { id: 1, start: 0.5, end: 2.5, text: '歡迎使用 Subber 音頻字幕編輯器' },
+    { id: 2, start: 3.0, end: 5.5, text: '這是一個輕量的打軸工具' },
+    { id: 3, start: 6.0, end: 9.0, text: '支援桌面與平板模式' },
+    { id: 4, start: 9.5, end: 12.0, text: '請載入音頻和 SRT 開始工作' }
+  ];
+  state.selectedIndex = 0;
+  renderAll();
+}
+
+resizeCanvas();
+loadDemo();
+showToast('Subber 已就緒' + (isIOS ? ' (iOS 模式)' : ''));
+</script>
+</body>
+</html>
