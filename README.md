@@ -1,4 +1,4 @@
-﻿# Subber — 音頻字幕編輯器 / Audio Subtitle Editor
+# Subber — 音頻字幕編輯器 / Audio Subtitle Editor
 
 [English](#english) | [繁體中文](#繁體中文)
 
@@ -11,8 +11,8 @@ Single-file HTML, zero frameworks, zero build steps.
 
 | 檔案 / File | 說明 / Description |
 |---|---|
-| `音頻字幕編輯器.html` | The entire application. Open this file. |
-| `設計文件.txt` | Design specification v2.0 (Traditional Chinese). |
+| `main.html` | The entire application. Open this file. |
+| `Design Document.txt` | Design specification v2.0 (Traditional Chinese). |
 
 ---
 
@@ -22,7 +22,7 @@ Single-file HTML, zero frameworks, zero build steps.
 
 No installation, no server, no build.
 
-1. Open `音頻字幕編輯器.html` in Chrome, Edge, Firefox, or Safari.
+1. Open `main.html` in Chrome, Edge, Firefox, or Safari.
 2. Click **📂 音頻** and pick an audio file (`audio/*` — mp3, wav, m4a, ogg,
    and flac on browsers that can decode it).
 3. Optionally click **📄 SRT** to load an existing subtitle file.
@@ -126,7 +126,7 @@ serialization causes when pasting into Notes, WeChat, or Word.
 
 Desktop Chrome, Edge, Firefox, and Safari; iPadOS 15+ Safari and Chrome;
 Android Chrome; HarmonyOS browsers. See the compatibility matrix in
-`設計文件.txt` for per-platform details.
+`Design Document.txt` for per-platform details.
 
 ---
 
@@ -136,7 +136,7 @@ Android Chrome; HarmonyOS browsers. See the compatibility matrix in
 
 不需要安裝、不需要伺服器、不需要建置。
 
-1. 以 Chrome、Edge、Firefox 或 Safari 開啟 `音頻字幕編輯器.html`。
+1. 以 Chrome、Edge、Firefox 或 Safari 開啟 `main.html`。
 2. 點擊 **📂 音頻** 選擇音頻檔（`audio/*`，即 mp3、wav、m4a、ogg，
    以及瀏覽器可解碼時的 flac）。
 3. 可選擇性點擊 **📄 SRT** 載入既有字幕檔。
@@ -232,5 +232,5 @@ Android Chrome; HarmonyOS browsers. See the compatibility matrix in
 ## 瀏覽器支援
 
 桌面 Chrome、Edge、Firefox、Safari；iPadOS 15+ Safari 與 Chrome；
-Android Chrome；HarmonyOS 瀏覽器。各平台細節請見 `設計文件.txt`
+Android Chrome；HarmonyOS 瀏覽器。各平台細節請見 `Design Document.txt`
 的相容性矩陣。
